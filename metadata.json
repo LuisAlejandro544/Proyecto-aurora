@@ -1,0 +1,6 @@
+{
+  "name": "Hello World - Rojo Roblox",
+  "description": "Web Hello World y pipeline de Rojo con GitHub Actions para compilar y publicar un cubo negro en Roblox.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

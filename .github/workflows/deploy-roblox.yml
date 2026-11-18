@@ -1,0 +1,84 @@
+# Workflow MANUAL de GitHub Actions para compilar el juego 1v1 con Rojo + Lune y subirlo a Roblox.
+# IMPORTANTE: Solo se activa manualmente desde la pestaña "Actions" (workflow_dispatch).
+# No se ejecuta en pushes ni pull requests.
+
+name: Compilar Mapa y Subir a Roblox
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_type:
+        description: "Tipo de subida en Roblox (Published = público al instante, Saved = borrador)"
+        required: true
+        default: "Published"
+        type: choice
+        options:
+          - Published
+          - Saved
+
+jobs:
+  build-and-publish:
+    name: Rojo + Lune + Open Cloud
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Descarga todo el código del repositorio
+      - name: Descargar código del repositorio
+        uses: actions/checkout@v4
+
+      # 2. Instala Rokit y descarga Rojo + Lune según rokit.toml
+      - name: Instalar Rokit (Rojo y Lune)
+        uses: CompeyDev/setup-rokit@v0.2.1
+        with:
+          path: .
+          token: ${{ github.token }}
+
+      # 3. Compila el proyecto base y todos los scripts Luau en build/game.rbxl
+      - name: Compilar scripts con Rojo
+        run: |
+          mkdir -p build
+          rojo build default.project.json --output build/game.rbxl
+
+      # 4. Ejecuta Lune para construir el mapa de ciudad en ruinas, iluminación y la G18 dentro de build/game.rbxl
+      - name: Construir mapa y arma G18 con Lune
+        run: |
+          lune run tools/build_map.luau
+          ls -lh build/game.rbxl
+
+      # 5. Guarda el .rbxl final como artefacto descargable en GitHub (14 días)
+      - name: Guardar artefacto .rbxl
+        uses: actions/upload-artifact@v4
+        with:
+          name: ruined-city-1v1-rbxl
+          path: build/game.rbxl
+          retention-days: 14
+
+      # 6. Publica el archivo .rbxl compilado en Roblox usando Open Cloud API
+      - name: Subir a Roblox mediante Open Cloud API
+        env:
+          ROBLOX_API_KEY: ${{ secrets.ROBLOX_API_KEY }}
+          ROBLOX_UNIVERSE_ID: ${{ vars.ROBLOX_UNIVERSE_ID }}
+          ROBLOX_PLACE_ID: ${{ vars.ROBLOX_PLACE_ID }}
+          VERSION_TYPE: ${{ github.event.inputs.version_type || 'Published' }}
+        run: |
+          if [ -z "$ROBLOX_API_KEY" ] || [ -z "$ROBLOX_UNIVERSE_ID" ] || [ -z "$ROBLOX_PLACE_ID" ]; then
+            echo "::error::Faltan credenciales en GitHub: configura ROBLOX_API_KEY (Secret) y ROBLOX_UNIVERSE_ID / ROBLOX_PLACE_ID (Variables)."
+            exit 1
+          fi
+
+          RESPONSE_FILE=$(mktemp)
+          HTTP_CODE=$(curl -sS -o "$RESPONSE_FILE" -w "%{http_code}" \
+            --request POST \
+            "https://apis.roblox.com/universes/v1/${ROBLOX_UNIVERSE_ID}/places/${ROBLOX_PLACE_ID}/versions?versionType=${VERSION_TYPE}" \
+            --header "x-api-key: ${ROBLOX_API_KEY}" \
+            --header "Content-Type: application/octet-stream" \
+            --data-binary "@build/game.rbxl")
+
+          echo "Respuesta HTTP de Roblox: $HTTP_CODE"
+          cat "$RESPONSE_FILE"
+          echo ""
+
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "::error::Error al subir el juego a Roblox (HTTP $HTTP_CODE). Revisa tu API Key, permiso universe-places:write y los IDs."
+            exit 1
+          fi

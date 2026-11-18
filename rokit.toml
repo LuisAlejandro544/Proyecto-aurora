@@ -1,0 +1,8 @@
+# Archivo de herramientas de Rokit (gestor oficial de herramientas para Roblox).
+# GitHub Actions leerá este archivo e instalará exactamente:
+# - rojo: compila los scripts .luau y default.project.json en build/game.rbxl
+# - lune: ejecuta tools/build_map.luau para construir el mapa en ruinas y la G18 dentro del .rbxl
+
+[tools]
+rojo = "rojo-rbx/rojo@7.7.1"
+lune = "lune-org/lune@0.10.4"
