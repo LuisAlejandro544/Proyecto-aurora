@@ -32,9 +32,10 @@ Funciona tanto en **R15** como en **R6** sin necesitar IDs de animaciones extern
 
 El workflow `.github/workflows/deploy-roblox.yml` **nunca** se ejecuta solo con commits o pull requests:
 
-1. Configura en tu repo (**Settings -> Secrets and variables -> Actions**):
-   - Secret: `ROBLOX_API_KEY` (con permiso `universe-places:write` e IP `0.0.0.0/0`).
-   - Variables: `ROBLOX_UNIVERSE_ID` y `ROBLOX_PLACE_ID`.
+1. Configura en tu repo (**Settings -> Secrets and variables -> Actions -> Secrets -> New repository secret**):
+   - `ROBLOX_API_KEY` (con permiso `universe-places:write` e IP `0.0.0.0/0`).
+   - `ROBLOX_UNIVERSE_ID` (también funciona si lo pones en *Variables*).
+   - `ROBLOX_PLACE_ID` (también funciona si lo pones en *Variables*).
 2. Desde tu teléfono en GitHub ve a la pestaña **Actions**.
 3. Selecciona **Compilar Mapa y Subir a Roblox**.
 4. Pulsa **Run workflow** -> elige `Published` (o `Saved`) -> **Run workflow**.

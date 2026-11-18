@@ -93,6 +93,12 @@ export function validateManualDeployWorkflow(yamlContent: string): string[] {
   if (!yamlContent.includes('secrets.ROBLOX_API_KEY')) {
     errors.push('El workflow debe leer secrets.ROBLOX_API_KEY.');
   }
+  if (!yamlContent.includes('secrets.ROBLOX_UNIVERSE_ID')) {
+    errors.push('El workflow debe aceptar ROBLOX_UNIVERSE_ID desde secrets.');
+  }
+  if (!yamlContent.includes('secrets.ROBLOX_PLACE_ID')) {
+    errors.push('El workflow debe aceptar ROBLOX_PLACE_ID desde secrets.');
+  }
 
   return errors;
 }

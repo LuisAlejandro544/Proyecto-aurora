@@ -57,12 +57,17 @@ jobs:
       - name: Subir a Roblox mediante Open Cloud API
         env:
           ROBLOX_API_KEY: ${{ secrets.ROBLOX_API_KEY }}
-          ROBLOX_UNIVERSE_ID: ${{ vars.ROBLOX_UNIVERSE_ID }}
-          ROBLOX_PLACE_ID: ${{ vars.ROBLOX_PLACE_ID }}
+          ROBLOX_UNIVERSE_ID: ${{ secrets.ROBLOX_UNIVERSE_ID || vars.ROBLOX_UNIVERSE_ID }}
+          ROBLOX_PLACE_ID: ${{ secrets.ROBLOX_PLACE_ID || vars.ROBLOX_PLACE_ID }}
           VERSION_TYPE: ${{ github.event.inputs.version_type || 'Published' }}
         run: |
-          if [ -z "$ROBLOX_API_KEY" ] || [ -z "$ROBLOX_UNIVERSE_ID" ] || [ -z "$ROBLOX_PLACE_ID" ]; then
-            echo "::error::Faltan credenciales en GitHub: configura ROBLOX_API_KEY (Secret) y ROBLOX_UNIVERSE_ID / ROBLOX_PLACE_ID (Variables)."
+          MISSING=""
+          [ -z "$ROBLOX_API_KEY" ] && MISSING="$MISSING ROBLOX_API_KEY"
+          [ -z "$ROBLOX_UNIVERSE_ID" ] && MISSING="$MISSING ROBLOX_UNIVERSE_ID"
+          [ -z "$ROBLOX_PLACE_ID" ] && MISSING="$MISSING ROBLOX_PLACE_ID"
+
+          if [ -n "$MISSING" ]; then
+            echo "::error::Faltan estos datos en Repository secrets de GitHub:$MISSING (revisa que estén en 'Repository secrets' con esos nombres exactos)."
             exit 1
           fi
 
