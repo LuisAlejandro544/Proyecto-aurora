@@ -1,0 +1,66 @@
+# Workflow MANUAL para generar y publicar el paquete de animaciones en un GitHub Release.
+# IMPORTANTE: Solo se ejecuta manualmente desde la pestaña "Actions" (workflow_dispatch)
+# escribiendo el Tag del Release desde tu teléfono.
+
+name: Publicar Animaciones en Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Tag del Release para las animaciones (ej: anim-v1.0.0)"
+        required: true
+        default: "anim-v1.0.0"
+        type: string
+      release_notes:
+        description: "Notas breves de esta versión de animaciones"
+        required: false
+        default: "Paquete de animaciones por keyframes (Slide, Dive, Crouch, Jump, Sprint, Aim, ReloadG18, FireKick)."
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  publish-animations:
+    name: Generar y Subir Animaciones a Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar código del repositorio
+        uses: actions/checkout@v4
+
+      - name: Generar y compilar paquete de animaciones
+        run: |
+          python3 tools/generate_animations.py --output build/animations/animations-pack.json
+          python3 tools/compile_animations.py --input build/animations/animations-pack.json --output build/animations/AnimationClips.luau
+          tar -czf build/animations/animations-pack.tar.gz -C build/animations animations-pack.json AnimationClips.luau
+          ls -lh build/animations
+
+      - name: Publicar assets de animaciones en GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.release_tag }}
+          NOTES: ${{ github.event.inputs.release_notes }}
+        run: |
+          TAG_CLEAN=$(echo "$TAG" | tr -d '[:space:]')
+          if [ -z "$TAG_CLEAN" ]; then
+            echo "::error::Debes escribir un Tag válido (por ejemplo: anim-v1.0.0)."
+            exit 1
+          fi
+
+          if gh release view "$TAG_CLEAN" >/dev/null 2>&1; then
+            echo "El Release $TAG_CLEAN ya existe; actualizando archivos de animaciones..."
+            gh release upload "$TAG_CLEAN" \
+              build/animations/animations-pack.json \
+              build/animations/AnimationClips.luau \
+              build/animations/animations-pack.tar.gz \
+              --clobber
+          else
+            gh release create "$TAG_CLEAN" \
+              build/animations/animations-pack.json \
+              build/animations/AnimationClips.luau \
+              build/animations/animations-pack.tar.gz \
+              --title "Animaciones $TAG_CLEAN" \
+              --notes "$NOTES"
+          fi

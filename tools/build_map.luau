@@ -14,6 +14,7 @@
 
 local fs = require("@lune/fs")
 local roblox = require("@lune/roblox")
+local serde = require("@lune/serde")
 
 local Instance = roblox.Instance
 local Vector3 = roblox.Vector3
@@ -311,6 +312,9 @@ local remoteNames = {
 	"ReloadWeaponEvent",
 	"HitConfirmEvent",
 	"ScoreUpdateEvent",
+	"SelectModeEvent",
+	"MatchStateEvent",
+	"WeaponTracerEvent",
 }
 
 for _, rName in remoteNames do
@@ -398,6 +402,85 @@ addGunPart("ModuloTactico", Vector3.new(0.22, 0.16, 0.42), CFrame.new(0, 0.17, -
 -- Boca del cañón (para origen de trazadores y fogonazo)
 local muzzle = addGunPart("Muzzle", Vector3.new(0.10, 0.10, 0.10), CFrame.new(0, 0.52, -1.24), COL_BARREL, Enum.Material.SmoothPlastic)
 muzzle.Transparency = 1
+
+-- ============================================================================
+-- 8. COMPILAR ANIMACIONES DESDE animations-pack.json A REPLICATEDSTORAGE.ANIMATIONS
+-- ============================================================================
+local ANIM_PACK_PATH = "build/animations/animations-pack.json"
+local animationsFolder = replicatedStorage:FindFirstChild("Animations")
+if not animationsFolder then
+	animationsFolder = Instance.new("Folder")
+	animationsFolder.Name = "Animations"
+	animationsFolder.Parent = replicatedStorage
+end
+
+if fs.isFile(ANIM_PACK_PATH) then
+	local animRaw = fs.readFile(ANIM_PACK_PATH)
+	local okDecode, animData = pcall(function()
+		return serde.decode("json", animRaw)
+	end)
+
+	if okDecode and typeof(animData) == "table" and typeof(animData.clips) == "table" then
+		local compiledCount = 0
+		for clipName, clip in animData.clips do
+			if typeof(clipName) ~= "string" or typeof(clip) ~= "table" then
+				continue
+			end
+
+			local oldClip = animationsFolder:FindFirstChild(clipName)
+			if oldClip then
+				oldClip:Destroy()
+			end
+
+			local kfs = Instance.new("KeyframeSequence")
+			kfs.Name = clipName
+			kfs.Loop = clip.loop == true
+			kfs.Parent = animationsFolder
+
+			local r15Frames = clip.r15
+			if typeof(r15Frames) == "table" then
+				for idx, frameData in r15Frames do
+					if typeof(frameData) ~= "table" then
+						continue
+					end
+					local kf = Instance.new("Keyframe")
+					kf.Name = "KF_" .. tostring(idx)
+					kf.Time = if typeof(frameData.time) == "number" then frameData.time else 0
+					kf.Parent = kfs
+
+					local rootPose = Instance.new("Pose")
+					rootPose.Name = "HumanoidRootPart"
+					rootPose.Weight = 0
+					rootPose.Parent = kf
+
+					if typeof(frameData.bones) == "table" then
+						for boneName, boneVal in frameData.bones do
+							if typeof(boneName) == "string" and typeof(boneVal) == "table" then
+								local pose = Instance.new("Pose")
+								pose.Name = boneName
+								pose.Weight = 1
+
+								local rot = boneVal.rot
+								local pos = boneVal.pos
+								local cf = CFrame.new()
+								if typeof(pos) == "table" and #pos >= 3 then
+									cf = CFrame.new(pos[1], pos[2], pos[3])
+								end
+								if typeof(rot) == "table" and #rot >= 3 then
+									cf = cf * CFrame.Angles(math.rad(rot[1]), math.rad(rot[2]), math.rad(rot[3]))
+								end
+								pose.CFrame = cf
+								pose.Parent = rootPose
+							end
+						end
+					end
+				end
+			end
+			compiledCount += 1
+		end
+		print("[Lune] KeyframeSequences compilados en ReplicatedStorage.Animations:", compiledCount)
+	end
+end
 
 -- Guardar el archivo .rbxl actualizado
 local serialized = roblox.serializePlace(game)

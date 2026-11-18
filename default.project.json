@@ -18,6 +18,9 @@
       },
       "Weapons": {
         "$className": "Folder"
+      },
+      "Animations": {
+        "$className": "Folder"
       }
     },
     "ServerScriptService": {

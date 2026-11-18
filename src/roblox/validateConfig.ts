@@ -41,6 +41,7 @@ export function validateRojoLuneProject(project: RojoProject): string[] {
     if (!rep.Shared) errors.push('Falta ReplicatedStorage.Shared.');
     if (!rep.Remotes) errors.push('Falta ReplicatedStorage.Remotes.');
     if (!rep.Weapons) errors.push('Falta ReplicatedStorage.Weapons.');
+    if (!rep.Animations) errors.push('Falta ReplicatedStorage.Animations.');
   }
 
   const sss = project.tree?.ServerScriptService as Record<string, unknown> | undefined;

@@ -2,11 +2,11 @@
 --[=[
 	Servidor autoritativo del arma G18 (Script en ServerScriptService.Server).
 	Lógica:
-	- Controla munición por jugador (33 balas por cargador) y tiempo de recarga.
-	- Valida la cadencia de disparo automático y ejecuta el Raycast real en servidor
-	  desde la posición de la cabeza del tirador, respetando todas las coberturas
-	  del mapa para que ninguna bala atraviese muros o vehículos.
-	- Aplica daño (cabeza o cuerpo) y envía confirmación de impacto (Hitmarker).
+	- Controla munición por jugador (33 balas por cargador) y recarga segura con token.
+	- Valida la cadencia y ejecuta el Raycast real en servidor respetando coberturas.
+	- Calcula daño diferenciado según parte impactada (cabeza, pecho, brazos, manos,
+	  piernas y pies) mediante WeaponStats.ResolveHitDamage.
+	- Guarda LastHitDirection para la caída realista (Ragdoll) y replica trazadores.
 ]=]
 
 local Players = game:GetService("Players")
@@ -20,21 +20,26 @@ local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local FireWeaponEvent = Remotes:WaitForChild("FireWeaponEvent") :: RemoteEvent
 local ReloadWeaponEvent = Remotes:WaitForChild("ReloadWeaponEvent") :: RemoteEvent
 local HitConfirmEvent = Remotes:WaitForChild("HitConfirmEvent") :: RemoteEvent
+local WeaponTracerEvent = Remotes:WaitForChild("WeaponTracerEvent") :: RemoteEvent
 
 type PlayerAmmoState = {
 	Ammo: number,
 	LastFireTime: number,
 	IsReloading: boolean,
+	ReloadToken: number,
 }
 
 local stats = WeaponStats.G18
 local playerStates: { [number]: PlayerAmmoState } = {}
 
 local function resetAmmo(userId: number)
+	local prev = playerStates[userId]
+	local nextToken = if prev then prev.ReloadToken + 1 else 1
 	playerStates[userId] = {
 		Ammo = stats.MagazineSize,
 		LastFireTime = 0,
 		IsReloading = false,
+		ReloadToken = nextToken,
 	}
 end
 
@@ -58,6 +63,10 @@ local function hasEquippedG18(character: Model): Tool?
 end
 
 ReloadWeaponEvent.OnServerEvent:Connect(function(player: Player)
+	if player:GetAttribute("GameMode") == "Menu" then
+		return
+	end
+
 	local state = playerStates[player.UserId]
 	local character = player.Character
 	if not state or not character then
@@ -76,17 +85,27 @@ ReloadWeaponEvent.OnServerEvent:Connect(function(player: Player)
 	end
 
 	state.IsReloading = true
+	state.ReloadToken += 1
+	local myToken = state.ReloadToken
+	character:SetAttribute("IsReloading", true)
+
 	task.delay(stats.ReloadTime, function()
 		local currentState = playerStates[player.UserId]
-		if currentState and currentState.IsReloading then
+		if currentState and currentState.IsReloading and currentState.ReloadToken == myToken then
 			currentState.Ammo = stats.MagazineSize
 			currentState.IsReloading = false
+			if character.Parent then
+				character:SetAttribute("IsReloading", false)
+			end
 		end
 	end)
 end)
 
 FireWeaponEvent.OnServerEvent:Connect(function(player: Player, targetPoint: unknown)
 	if typeof(targetPoint) ~= "Vector3" then
+		return
+	end
+	if player:GetAttribute("GameMode") == "Menu" then
 		return
 	end
 
@@ -102,7 +121,8 @@ FireWeaponEvent.OnServerEvent:Connect(function(player: Player, targetPoint: unkn
 		return
 	end
 
-	if not hasEquippedG18(character) then
+	local equippedTool = hasEquippedG18(character)
+	if not equippedTool then
 		return
 	end
 
@@ -123,7 +143,8 @@ FireWeaponEvent.OnServerEvent:Connect(function(player: Player, targetPoint: unkn
 	if delta.Magnitude < 0.05 then
 		return
 	end
-	local direction = delta.Unit * stats.MaxRange
+	local unitDir = delta.Unit
+	local direction = unitDir * stats.MaxRange
 
 	local rayParams = RaycastParams.new()
 	rayParams.FilterType = Enum.RaycastFilterType.Exclude
@@ -131,6 +152,17 @@ FireWeaponEvent.OnServerEvent:Connect(function(player: Player, targetPoint: unkn
 	rayParams.IgnoreWater = true
 
 	local result = workspace:Raycast(origin, direction, rayParams)
+	local endPos = if result then result.Position else (origin + direction)
+
+	-- Replicar trazador visual a los demás clientes
+	local muzzle = equippedTool:FindFirstChild("Muzzle")
+	local muzzlePos = if muzzle and muzzle:IsA("BasePart") then muzzle.Position else origin
+	for _, other in Players:GetPlayers() do
+		if other ~= player then
+			WeaponTracerEvent:FireClient(other, character, muzzlePos, endPos)
+		end
+	end
+
 	if not result or not result.Instance then
 		return
 	end
@@ -145,14 +177,17 @@ FireWeaponEvent.OnServerEvent:Connect(function(player: Player, targetPoint: unkn
 		return
 	end
 
-	local isHeadshot = result.Instance.Name == "Head"
-	local damage = if isHeadshot then stats.DamageHead else stats.DamageBody
+	local damage, hitZone = WeaponStats.ResolveHitDamage(Config.DefaultWeaponName, result.Instance.Name)
+	local isHeadshot = hitZone == "Head"
 
 	targetHumanoid:SetAttribute("LastAttackerUserId", player.UserId)
+	targetHumanoid:SetAttribute("LastHitDirection", unitDir)
 	targetHumanoid:TakeDamage(damage)
 
 	HitConfirmEvent:FireClient(player, {
 		IsHeadshot = isHeadshot,
+		HitZone = hitZone,
+		Damage = damage,
 		HitPosition = result.Position,
 		RemainingHealth = math.max(0, targetHumanoid.Health),
 	})

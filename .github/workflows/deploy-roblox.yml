@@ -15,6 +15,14 @@ on:
         options:
           - Published
           - Saved
+      animations_tag:
+        description: "Tag del Release de animaciones a descargar (ej: anim-v1.0.0, o 'latest' para el último)"
+        required: false
+        default: "latest"
+        type: string
+
+permissions:
+  contents: read
 
 jobs:
   build-and-publish:
@@ -26,26 +34,55 @@ jobs:
       - name: Descargar código del repositorio
         uses: actions/checkout@v4
 
-      # 2. Instala Rokit y descarga Rojo + Lune según rokit.toml
+      # 2. Descarga las animaciones desde GitHub Release (por Tag o latest) y las compila a Luau
+      - name: Descargar y compilar animaciones desde Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANIM_TAG: ${{ github.event.inputs.animations_tag || 'latest' }}
+        run: |
+          mkdir -p build/animations
+          TAG_CLEAN=$(echo "$ANIM_TAG" | tr -d '[:space:]')
+          DOWNLOADED=0
+
+          if [ -z "$TAG_CLEAN" ] || [ "$TAG_CLEAN" = "latest" ]; then
+            if gh release download --pattern "animations-pack.json" --dir build/animations --clobber 2>/dev/null; then
+              DOWNLOADED=1
+              echo "Animaciones descargadas del último GitHub Release."
+            fi
+          else
+            if gh release download "$TAG_CLEAN" --pattern "animations-pack.json" --dir build/animations --clobber; then
+              DOWNLOADED=1
+              echo "Animaciones descargadas del Release $TAG_CLEAN."
+            fi
+          fi
+
+          if [ "$DOWNLOADED" -eq 0 ]; then
+            echo "No se encontró un Release previo; generando animaciones base desde tools/generate_animations.py..."
+            python3 tools/generate_animations.py --output build/animations/animations-pack.json
+          fi
+
+          python3 tools/compile_animations.py --input build/animations/animations-pack.json --output src/roblox/shared/AnimationClips.luau
+
+      # 3. Instala Rokit y descarga Rojo + Lune según rokit.toml
       - name: Instalar Rokit (Rojo y Lune)
         uses: CompeyDev/setup-rokit@v0.2.1
         with:
           path: .
           token: ${{ github.token }}
 
-      # 3. Compila el proyecto base y todos los scripts Luau en build/game.rbxl
+      # 4. Compila el proyecto base y todos los scripts Luau en build/game.rbxl
       - name: Compilar scripts con Rojo
         run: |
           mkdir -p build
           rojo build default.project.json --output build/game.rbxl
 
-      # 4. Ejecuta Lune para construir el mapa de ciudad en ruinas, iluminación y la G18 dentro de build/game.rbxl
-      - name: Construir mapa y arma G18 con Lune
+      # 5. Ejecuta Lune para construir el mapa, arma G18 y KeyframeSequences en build/game.rbxl
+      - name: Construir mapa, G18 y animaciones con Lune
         run: |
           lune run tools/build_map.luau
           ls -lh build/game.rbxl
 
-      # 5. Guarda el .rbxl final como artefacto descargable en GitHub (14 días)
+      # 6. Guarda el .rbxl final como artefacto descargable en GitHub (14 días)
       - name: Guardar artefacto .rbxl
         uses: actions/upload-artifact@v4
         with:
@@ -53,7 +90,7 @@ jobs:
           path: build/game.rbxl
           retention-days: 14
 
-      # 6. Publica el archivo .rbxl compilado en Roblox usando Open Cloud API
+      # 7. Publica el archivo .rbxl compilado en Roblox usando Open Cloud API
       - name: Subir a Roblox mediante Open Cloud API
         env:
           ROBLOX_API_KEY: ${{ secrets.ROBLOX_API_KEY }}

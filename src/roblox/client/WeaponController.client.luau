@@ -2,11 +2,10 @@
 --[=[
 	Controlador del arma G18 en el cliente (LocalScript en StarterPlayerScripts.Client).
 	Lógica:
-	- Detecta cuando la pistola G18 está equipada.
+	- Detecta cuando la pistola G18 está equipada y bloquea disparos en modo Menú.
 	- Dispara en modo automático al mantener clic izquierdo o el botón táctil de disparo.
-	- Calcula el punto exacto de la mira en el centro de la pantalla (con dispersión real
-	  reducida al apuntar o agacharse) y dibuja un trazador rápido + fogonazo.
-	- Envía el disparo al servidor y muestra Hitmarker cuando el servidor confirma impacto.
+	- Dibuja trazadores y fogonazos locales y los replicados por el Bot o rivales.
+	- Envía el disparo al servidor y muestra Hitmarker con zona corporal y daño.
 ]=]
 
 local Debris = game:GetService("Debris")
@@ -23,6 +22,7 @@ local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local FireWeaponEvent = Remotes:WaitForChild("FireWeaponEvent") :: RemoteEvent
 local ReloadWeaponEvent = Remotes:WaitForChild("ReloadWeaponEvent") :: RemoteEvent
 local HitConfirmEvent = Remotes:WaitForChild("HitConfirmEvent") :: RemoteEvent
+local WeaponTracerEvent = Remotes:WaitForChild("WeaponTracerEvent") :: RemoteEvent
 
 local ClientState = require(script.Parent:WaitForChild("ClientState"))
 
@@ -32,6 +32,7 @@ local rng = Random.new()
 
 local lastShotTime = 0
 local equippedTool: Tool? = nil
+local reloadToken = 0
 
 local function getAimWorldPoint(character: Model): Vector3
 	local camera = workspace.CurrentCamera
@@ -100,15 +101,28 @@ local function spawnTracerAndFlash(muzzlePos: Vector3, endPos: Vector3)
 end
 
 local function triggerReload()
+	if ClientState.GameMode == "Menu" then
+		return
+	end
 	if not equippedTool or ClientState.IsReloading or ClientState.Ammo >= stats.MagazineSize then
 		return
 	end
 	ClientState.IsReloading = true
+	reloadToken += 1
+	local myToken = reloadToken
+	local character = localPlayer.Character
+	if character then
+		character:SetAttribute("IsReloading", true)
+	end
+
 	ReloadWeaponEvent:FireServer()
 	task.delay(stats.ReloadTime, function()
-		if ClientState.IsReloading then
+		if ClientState.IsReloading and reloadToken == myToken then
 			ClientState.Ammo = stats.MagazineSize
 			ClientState.IsReloading = false
+			if localPlayer.Character then
+				localPlayer.Character:SetAttribute("IsReloading", false)
+			end
 		end
 	end)
 end
@@ -116,6 +130,9 @@ end
 ClientState.OnReload = triggerReload
 
 local function tryFire()
+	if ClientState.GameMode == "Menu" then
+		return
+	end
 	local character = localPlayer.Character
 	local hum = if character then character:FindFirstChildOfClass("Humanoid") else nil
 	if not character or not hum or hum.Health <= 0 then
@@ -138,6 +155,7 @@ local function tryFire()
 	end
 	lastShotTime = now
 	ClientState.Ammo -= 1
+	character:SetAttribute("LastShotClock", now)
 
 	local targetPoint = getAimWorldPoint(character)
 	FireWeaponEvent:FireServer(targetPoint)
@@ -163,7 +181,7 @@ end
 
 -- Controles de ratón / teclado en PC
 UserInputService.InputBegan:Connect(function(input: InputObject, gameProcessed: boolean)
-	if gameProcessed then
+	if gameProcessed or ClientState.GameMode == "Menu" then
 		return
 	end
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -183,23 +201,35 @@ UserInputService.InputEnded:Connect(function(input: InputObject)
 	end
 end)
 
-HitConfirmEvent.OnClientEvent:Connect(function(info: { IsHeadshot: boolean? })
+HitConfirmEvent.OnClientEvent:Connect(function(info: { IsHeadshot: boolean?, HitZone: string?, Damage: number? })
 	if ClientState.OnHitConfirm then
-		ClientState.OnHitConfirm(info.IsHeadshot == true)
+		ClientState.OnHitConfirm(info.IsHeadshot == true, info.HitZone, info.Damage)
+	end
+end)
+
+WeaponTracerEvent.OnClientEvent:Connect(function(shooterModel: Model?, muzzlePos: Vector3, endPos: Vector3)
+	if shooterModel and shooterModel == localPlayer.Character then
+		return
+	end
+	if typeof(muzzlePos) == "Vector3" and typeof(endPos) == "Vector3" then
+		spawnTracerAndFlash(muzzlePos, endPos)
 	end
 end)
 
 RunService.RenderStepped:Connect(function()
-	if ClientState.IsFiring and ClientState.IsWeaponEquipped then
+	if ClientState.IsFiring and ClientState.IsWeaponEquipped and ClientState.GameMode ~= "Menu" then
 		tryFire()
 	end
 end)
 
 local function bindCharacterTools(character: Model)
 	equippedTool = nil
+	reloadToken += 1
 	ClientState.IsWeaponEquipped = false
 	ClientState.IsReloading = false
+	ClientState.IsFiring = false
 	ClientState.Ammo = stats.MagazineSize
+	character:SetAttribute("IsReloading", false)
 
 	local function refreshTool()
 		local tool = character:FindFirstChildOfClass("Tool")

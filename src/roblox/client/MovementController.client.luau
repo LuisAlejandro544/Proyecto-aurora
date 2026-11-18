@@ -142,6 +142,9 @@ local function startSlide()
 end
 
 local function triggerCrouchOrSlide()
+	if ClientState.GameMode == "Menu" then
+		return
+	end
 	local hum = currentHumanoid
 	if not hum or hum.Health <= 0 or isDiving then
 		return
@@ -170,6 +173,9 @@ local function triggerCrouchOrSlide()
 end
 
 local function triggerJumpOrSlideCancel()
+	if ClientState.GameMode == "Menu" then
+		return
+	end
 	local hum = currentHumanoid
 	if not hum or hum.Health <= 0 or isDiving then
 		return
@@ -196,6 +202,9 @@ local function triggerJumpOrSlideCancel()
 end
 
 local function triggerDive()
+	if ClientState.GameMode == "Menu" then
+		return
+	end
 	local hum = currentHumanoid
 	local root = currentRoot
 	if not hum or not root or hum.Health <= 0 then
@@ -291,6 +300,11 @@ RunService.Heartbeat:Connect(function()
 	local hum = currentHumanoid
 	local root = currentRoot
 	if not hum or not root or hum.Health <= 0 then
+		clearSlideForce()
+		return
+	end
+	if ClientState.GameMode == "Menu" then
+		hum.WalkSpeed = 0
 		return
 	end
 
@@ -384,6 +398,15 @@ local function onCharacterAdded(character: Model)
 	baseHipHeight = hum.HipHeight
 	hum.JumpPower = MovementConfig.JumpPower
 	hum.UseJumpPower = true
+
+	hum.Died:Connect(function()
+		clearSlideForce()
+		isSliding = false
+		isDiving = false
+		diveRecovering = false
+		ClientState.IsFiring = false
+		ClientState.IsAiming = false
+	end)
 
 	syncStateToServer("Idle")
 end

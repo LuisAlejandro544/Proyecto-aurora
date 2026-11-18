@@ -2,14 +2,16 @@
 --[=[
 	Estado compartido en el cliente (ModuleScript en StarterPlayerScripts.Client).
 	Lógica: Conecta de forma modular los controladores de movimiento, cámara,
-	arma G18 y botones táctiles de la pantalla sin crear dependencias circulares.
+	arma G18, selector de modo y botones táctiles sin crear dependencias circulares.
 ]=]
 
 local WeaponStats = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("WeaponStats"))
 
 export type MoveState = "Idle" | "Sprint" | "Crouch" | "Slide" | "Dive" | "Jump"
+export type GameMode = "Menu" | "Bot" | "Multiplayer"
 
 local ClientState = {
+	GameMode = "Menu" :: GameMode,
 	MoveState = "Idle" :: MoveState,
 	IsSprinting = false,
 	IsCrouching = false,
@@ -31,7 +33,7 @@ local ClientState = {
 	OnJumpOrCancel = nil :: (() -> ())?,
 	OnDive = nil :: (() -> ())?,
 	OnReload = nil :: (() -> ())?,
-	OnHitConfirm = nil :: ((isHeadshot: boolean) -> ())?,
+	OnHitConfirm = nil :: ((isHeadshot: boolean, hitZone: string?, damage: number?) -> ())?,
 }
 
 function ClientState.AddCameraRecoil(pitchDeg: number, yawDeg: number)
